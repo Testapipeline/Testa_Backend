@@ -4,7 +4,7 @@ const bcrypt = require("bcrypt");
 const Student = require("../models/student");
 const Instructor = require("../models/instructor");
 const nodemailer = require("nodemailer");
-const Otp = require('../models/Otp');
+const Otp = require('../models/otp');
 
 
 const transporter = nodemailer.createTransport({

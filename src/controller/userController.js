@@ -1,7 +1,19 @@
+require('dotenv').config();
 const Admin = require("../models/admin");
 const bcrypt = require("bcrypt");
 const Student = require("../models/student");
 const Instructor = require("../models/instructor");
+const nodemailer = require("nodemailer");
+const Otp = require('../models/Otp');
+
+
+const transporter = nodemailer.createTransport({
+    service: 'Gmail',
+    auth: {
+        user: process.env.EMAIL,
+        pass: process.env.EMAIL_PASSWORD,
+    },
+});
 
 exports.login = async (req, res) => {
     const { email, password } = req.body;
@@ -30,10 +42,98 @@ exports.login = async (req, res) => {
     }
 };
 
+exports.sendVerificationCode = async (req, res) => {
+    const { email } = req.body;
+
+    try {
+        const user = await Admin.findOne({ email }) ||
+            await Student.findOne({ email }) ||
+            await Instructor.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+
+        await Otp.deleteMany({ email });
+
+        await Otp.create({ email, code });
+
+        const mailOptions = {
+            from: process.env.EMAIL,
+            to: email,
+            subject: "TESTA Password Reset Verification",
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; max-width: 500px; margin: auto;">
+                    <h2 style="color: #0d6efd; text-align: center;">🔑 Password Reset Request</h2>
+                    <p style="font-size: 16px;">Hello,</p>
+                    <p style="font-size: 16px;">We received a request to reset your password. Use the code below to proceed:</p>
+                    <div style="padding: 15px; border-radius: 8px; background-color: #f0f0f0; margin: 20px 0; text-align: center;">
+                        <span style="font-size: 24px; font-weight: bold; color: #0d6efd;">${code}</span>
+                    </div>
+                    <p style="font-size: 16px;">If you didn't request this, please ignore this email.</p>
+                    <p style="font-size: 14px; color: #888;">Thank you,<br/>The Testa Team</p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ message: "Verification code sent successfully" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.verifyOTP = async (req, res) => {
+    const { email, code} = req.params;
+
+    try {
+        const otpRecord = await Otp.findOne({ email, code });
+
+        if (!otpRecord) {
+            return res.status(400).json({ error: "Invalid or expired code" });
+        }
+
+        await Otp.deleteOne({ email, code });
+
+        res.status(200).json({ message: "Email Successfully Verified!" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.resetPassword = async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+
+        const user = await Admin.findOne({ email }) ||
+            await Student.findOne({ email }) ||
+            await Instructor.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        user.password = hashedPassword;
+        await user.save();
+
+        res.status(200).json({ message: "Password successfully reset" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+
 exports.register = async (req, res) => {
     const { name, email, password, role } = req.body;
     try {
-        // Check if email already exists
+
         let existingUser = await Admin.findOne({ email }) || await Student.findOne({ email }) || await Instructor.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ error: "Email already in use" });
